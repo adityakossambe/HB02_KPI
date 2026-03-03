@@ -45,42 +45,116 @@ def automate_function(
             It also has convenient methods for attaching results to the Speckle model.
         function_inputs: An instance object matching the defined schema.
     """
-    # The context provides a convenient way to receive the triggering version.
+    import pandas as pd
+    from datetime import datetime
+
     version_root_object = automate_context.receive_version()
 
-    objects_with_forbidden_speckle_type = [
-        b
-        for b in flatten_base(version_root_object)
-        if b.speckle_type == function_inputs.forbidden_speckle_type
-    ]
-    count = len(objects_with_forbidden_speckle_type)
+    # Get root collections
+    root_elements = getattr(version_root_object, "@elements", None) or getattr(
+        version_root_object, "elements", []
+    )
 
-    if count > 0:
-        # This is how a run is marked with a failure cause.
-        automate_context.attach_error_to_objects(
-            category="Forbidden speckle_type"
-            f" ({function_inputs.forbidden_speckle_type})",
-            affected_objects=objects_with_forbidden_speckle_type,
-            message="This project should not contain the type: "
-            f"{function_inputs.forbidden_speckle_type}",
+    cores = []
+    columns = []
+    slabs = []
+
+    # Identify collections
+    for el in root_elements:
+        name = getattr(el, "name", "").lower()
+        objects = getattr(el, "@elements", None) or getattr(el, "elements", [])
+
+        if "core" in name:
+            cores.extend(objects)
+
+        elif "column" in name:
+            columns.extend(objects)
+
+        elif "slab" in name:
+            slabs.extend(objects)
+
+    # Dictionaries to aggregate area per level
+    core_area_by_level = {}
+    column_area_by_level = {}
+    slab_area_by_level = {}
+
+    def add_area(obj, container):
+        props = getattr(obj, "properties", None)
+        if not props:
+            return
+
+        area = props.get("Area")
+        level = props.get("Level")
+
+        if area is None or level is None:
+            return
+
+        container[level] = container.get(level, 0) + area
+
+    for obj in cores:
+        add_area(obj, core_area_by_level)
+
+    for obj in columns:
+        add_area(obj, column_area_by_level)
+
+    for obj in slabs:
+        add_area(obj, slab_area_by_level)
+
+    # Determine roof level (highest slab level)
+    roof_level = max(slab_area_by_level.keys()) if slab_area_by_level else None
+
+    rows = []
+
+    for level in sorted(slab_area_by_level.keys()):
+
+        if level == roof_level:
+            continue
+
+        slab_area = slab_area_by_level.get(level, 0)
+        core_area = core_area_by_level.get(level, 0)
+        column_area = column_area_by_level.get(level, 0)
+
+        service_area = core_area + column_area
+        percent = (service_area / slab_area) * 100 if slab_area else 0
+
+        rows.append(
+            {
+                "Level": level,
+                "Slab Area": slab_area,
+                "Core + Column Area": service_area,
+                "Net Usable Area": slab_area - service_area,
+                "Service %": percent,
+            }
         )
-        automate_context.mark_run_failed(
-            "Automation failed: "
-            f"Found {count} object that have one of the forbidden speckle types: "
-            f"{function_inputs.forbidden_speckle_type}"
-        )
 
-        # Set the automation context view to the original model/version view
-        # to show the offending objects.
-        automate_context.set_context_view()
+    df = pd.DataFrame(rows)
 
-    else:
-        automate_context.mark_run_success("No forbidden types found.")
+    if not df.empty:
+        avg_percent = df["Service %"].mean()
 
-    # If the function generates file results, this is how it can be
-    # attached to the Speckle project/model
-    # automate_context.store_file_result("./report.pdf")
+        avg_row = {
+            "Level": "Average",
+            "Slab Area": "",
+            "Core + Column Area": "",
+            "Net Usable Area": "",
+            "Service %": avg_percent,
+        }
 
+        df = pd.concat([df, pd.DataFrame([avg_row])], ignore_index=True)
+
+    # Create timestamped Excel file
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    filepath = f"/tmp/service_ratio_{timestamp}.xlsx"
+
+    df.to_excel(filepath, index=False)
+
+    automate_context.store_file_result(filepath)
+
+    automate_context.mark_run_success(
+        "Core + Column vs Slab area analysis completed successfully."
+    )
+
+    
 
 def automate_function_without_inputs(automate_context: AutomationContext) -> None:
     """A function example without inputs.
