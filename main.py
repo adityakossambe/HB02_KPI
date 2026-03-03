@@ -148,11 +148,12 @@ def automate_function(
 
     df.to_excel(filepath, index=False)
 
-    automate_context.store_file_result(filepath)
+    file_url = automate_context.store_file_result(filepath)
 
     automate_context.mark_run_success(
-        "Core + Column vs Slab area analysis completed successfully."
-    )
+        f"Core + Column vs Slab area analysis completed successfully.\n"
+        f"Excel file uploaded: {file_url}"
+    )   
 
     
 
