@@ -148,12 +148,18 @@ def automate_function(
 
     df.to_excel(filepath, index=False)
 
-    file_url = automate_context.store_file_result(filepath)
+    # Upload the file and get its blob ID
+    blob_id = automate_context.store_file_result(filepath)
+
+    # Construct a full downloadable URL
+    project_id = automate_context.project_id
+    file_name = filepath.split("/")[-1]
+    download_url = f"https://speckle.xyz/projects/{project_id}/files/{blob_id}/{file_name}"
 
     automate_context.mark_run_success(
-        f"Core + Column vs Slab area analysis completed successfully.\n"
-        f"Excel file uploaded: {file_url}"
-    )   
+    f"Core + Column vs Slab area analysis completed successfully.\n"
+    f"Download Excel file: {download_url}"
+)  
 
     
 
