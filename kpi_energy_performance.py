@@ -1,19 +1,18 @@
 """
-kpi_energy.py
-Generates the Energy & Resource Performance KPI Excel sheet from a Speckle model.
+kpi_energy_performance.py
+Generates the Energy & Resource Performance KPI Excel sheet from a Speckle Facade collection.
 Each row includes: Panel ID, Mesh ID, monthly ISR values, and annual total.
 """
 
 import os
 import tempfile
-
-import pandas as pd
 from datetime import datetime
+import pandas as pd
+from typing import List
 
-
-def generate_energy_kpi_excel(facade_meshes):
+def generate_energy_kpi_excel(facade_meshes: List) -> str:
     """
-    Generates Excel sheet for energy & resource performance KPI.
+    Generates Excel sheet for Energy & Resource Performance KPI.
 
     Args:
         facade_meshes (list): List of facade mesh objects from Speckle, 
@@ -23,6 +22,7 @@ def generate_energy_kpi_excel(facade_meshes):
     Returns:
         str: Filepath of the generated Excel file.
     """
+
     rows = []
 
     # Sort meshes by panel_id
@@ -37,14 +37,12 @@ def generate_energy_kpi_excel(facade_meshes):
         mesh_id = props.get("id", "")
         isr_str = props.get("isr_value", "")
 
-        # Skip if no isr_value
         if not isr_str:
             continue
 
         try:
             monthly_values = [float(v.strip()) for v in isr_str.split(",")]
         except Exception:
-            # Skip invalid strings
             continue
 
         annual_total = sum(monthly_values)
@@ -64,7 +62,7 @@ def generate_energy_kpi_excel(facade_meshes):
             "Oct": monthly_values[9],
             "Nov": monthly_values[10],
             "Dec": monthly_values[11],
-            "Annual Total": annual_total,
+            "Annual Total": annual_total
         }
 
         rows.append(row)
@@ -82,9 +80,3 @@ def generate_energy_kpi_excel(facade_meshes):
     df.to_excel(filepath, index=False)
 
     return filepath
-
-
-# Example usage:
-# facade_meshes = [mesh1, mesh2, ...]  # list of Speckle mesh objects
-# excel_file = generate_energy_kpi_excel(facade_meshes)
-# print(f"Excel generated at: {excel_file}")

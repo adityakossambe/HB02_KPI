@@ -6,7 +6,7 @@ Applies colors and formatting to KPI Excel sheets.
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment, PatternFill
 
-# Define heading colors
+# Define heading colors for each KPI
 HEADING_COLORS = {
     "CFAR": "F4CCCC",        # Light Magenta 2
     "MUI": "F8CBAD",         # Light Red 2
@@ -32,12 +32,15 @@ def format_kpi_excel(filepath: str, kpi_name: str):
     ws = wb.active
 
     # Heading formatting
-    heading_fill = PatternFill(start_color=HEADING_COLORS.get(kpi_name, "FFFFFF"), fill_type="solid")
+    heading_fill = PatternFill(
+        start_color=HEADING_COLORS.get(kpi_name, "FFFFFF"),
+        fill_type="solid"
+    )
     for cell in ws[1]:
         cell.fill = heading_fill
         cell.alignment = Alignment(horizontal="center", vertical="center")
 
-    # Data rows formatting
+    # Data rows formatting (alternate colors)
     for idx, row in enumerate(ws.iter_rows(min_row=2), start=0):
         fill_color = ROW_COLORS[idx % 2]
         for cell in row:
