@@ -15,7 +15,7 @@ from excel_formatting import format_kpi_excel
 from kpi_cfar import calculate_cfar
 from kpi_mui import calculate_mui
 from kpi_modularity import calculate_modularity_index
-from kpi_energy_performance import generate_energy_kpi_excel  # make sure this file is named exactly kpi_energy_performance.py
+from kpi_energy import generate_energy_kpi_excel  # make sure this file is named exactly kpi_energy.py
 
 
 class FunctionInputs(AutomateBase):
@@ -68,13 +68,15 @@ def automate_function(automate_context: AutomationContext, function_inputs: Func
     files = {"CFAR": cfar_file, "MUI": mui_file, "Modularity": mod_file, "Energy": energy_file}
     download_urls = {}
 
+    project_id = automate_context.automation_run_data.project_id
+
     for kpi, file in files.items():
         if not file:
             continue
         blob_id = automate_context.store_file_result(file)
         file_name = os.path.basename(file)
-        # Only blob ID is needed for reference
-        download_urls[kpi] = f"Blob ID: {blob_id} (filename: {file_name})"
+        # Provide a link that can be used inside the Speckle project
+        download_urls[kpi] = f"https://speckle.xyz/projects/{project_id}/files/{blob_id}/{file_name}"
 
     # =========================
     # Report success
