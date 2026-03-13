@@ -1,8 +1,7 @@
 """
 transfer_modularity_model.py
 -----------------------------
-Transfers Facade and Exoskeleton separately to the modularity target model.
-No colour changes — plain transfer.
+Transfers the Facade collection as-is to the modularity target model.
 """
 
 from specklepy.objects.base import Base
@@ -20,27 +19,6 @@ def _make_collection(name, objects):
     return col
 
 
-def _send(automate_context, speckle_client, name, objects, target_stream_id, message):
-    project_id = automate_context.automation_run_data.project_id
-    root = Base()
-    root["speckle_type"] = "Speckle.Core.Models.Collections.Collection"
-    root["name"]         = name
-    root["elements"]     = [_make_collection(name, objects)]
-
-    print(f"[Modularity Transfer] Sending {name} ({len(objects)} objects)...")
-    transport = ServerTransport(stream_id=project_id, client=speckle_client)
-    obj_id = operations.send(base=root, transports=[transport])
-    print(f"[Modularity Transfer] {name} sent: {obj_id}")
-
-    version_id = automate_context.create_new_version_in_project(
-        root_object=root,
-        model_id=target_stream_id,
-        version_message=message,
-    )
-    print(f"[Modularity Transfer] {name} version: {version_id}")
-    return version_id
-
-
 def transfer_modularity_model(
     automate_context,
     speckle_client,
@@ -51,13 +29,37 @@ def transfer_modularity_model(
     print(f"[Modularity Transfer] Starting → model: {target_stream_id}")
 
     facade_objects = get_collection_objects(version_root, "Facade")
-    exo_objects    = get_collection_objects(version_root, "Exoskeleton")
-    print(f"[Modularity Transfer] Facade:{len(facade_objects)} Exo:{len(exo_objects)}")
+    print(f"[Modularity Transfer] Facade: {len(facade_objects)} objects")
 
-    _send(automate_context, speckle_client, "Facade", facade_objects, target_stream_id,
-          "Automate: facade transfer")
+    new_root = Base()
+    new_root["speckle_type"] = "Speckle.Core.Models.Collections.Collection"
+    new_root["name"]         = "Modularity Model"
+    new_root["elements"]     = [_make_collection("Facade", facade_objects)]
 
-    _send(automate_context, speckle_client, "Exoskeleton", exo_objects, target_stream_id,
-          "Automate: exoskeleton transfer")
+    project_id = automate_context.automation_run_data.project_id
+    print(f"[Modularity Transfer] Sending...")
 
-    print("[Modularity Transfer] Done.")
+    try:
+        transport = ServerTransport(stream_id=project_id, client=speckle_client)
+        obj_id = operations.send(base=new_root, transports=[transport])
+        print(f"[Modularity Transfer] Sent: {obj_id}")
+    except Exception as e:
+        import traceback
+        print(f"[Modularity Transfer] SEND ERROR: {type(e).__name__}: {e}")
+        traceback.print_exc()
+        raise
+
+    # Use automate context to create version - avoids client API version differences
+    try:
+        new_version_id = automate_context.create_new_version_in_project(
+            root_object=new_root,
+            model_id=target_stream_id,
+            version_message="Automate: facade transfer",
+        )
+        print(f"[Modularity Transfer] Version created: {new_version_id}")
+        return new_version_id
+    except Exception as e:
+        import traceback
+        print(f"[Modularity Transfer] VERSION ERROR: {type(e).__name__}: {e}")
+        traceback.print_exc()
+        raise
