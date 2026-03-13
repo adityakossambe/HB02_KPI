@@ -49,19 +49,17 @@ def transfer_modularity_model(
         traceback.print_exc()
         raise
 
+    # Use automate context to create version - avoids client API version differences
     try:
-        from specklepy.core.api.inputs.version_inputs import CreateVersionInput
-        version_input = CreateVersionInput(
-            project_id=project_id,
+        new_version_id = automate_context.create_new_version_in_project(
+            root_object=new_root,
             model_id=target_stream_id,
-            object_id=obj_id,
-            message="Automate: facade transfer",
+            version_message="Automate: facade transfer",
         )
-        version = speckle_client.version.create(version_input)
-        print(f"[Modularity Transfer] Version created: {version.id}")
-        return version.id
+        print(f"[Modularity Transfer] Version created: {new_version_id}")
+        return new_version_id
     except Exception as e:
         import traceback
-        print(f"[Modularity Transfer] COMMIT ERROR: {type(e).__name__}: {e}")
+        print(f"[Modularity Transfer] VERSION ERROR: {type(e).__name__}: {e}")
         traceback.print_exc()
         raise
