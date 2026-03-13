@@ -1,10 +1,8 @@
 """
 transfer_modularity_model.py
 -----------------------------
-Transfers only Facade and Exoskeleton to the modularity target model
-with colour overrides based on normalised modularity value:
-  - Facade:      blue (most repeated) → orange (least repeated)
-  - Exoskeleton: green (most repeated) → red (least repeated)
+Transfers only Exoskeleton elements to the modularity target model
+with green (most repeated) → red (least repeated) colour coding.
 """
 
 from collections import defaultdict
@@ -23,10 +21,8 @@ def _lerp(a, b, t):
 def _to_argb(r, g, b, a=255):
     return (a << 24) | (r << 16) | (g << 8) | b
 
-FACADE_HIGH = (0,   120, 255)
-FACADE_LOW  = (255, 140,   0)
-EXO_HIGH    = (0,   200,  80)
-EXO_LOW     = (220,  30,  30)
+EXO_HIGH = (0,   200,  80)   # green — most repeated
+EXO_LOW  = (220,  30,  30)   # red   — least repeated
 
 
 def _colour_for_normalised(normalised, high_rgb, low_rgb):
@@ -49,24 +45,16 @@ def _apply_colour_to_mesh(obj, colour_int):
 
 # ── Normalised values ─────────────────────────────────────────────────────
 
-def _compute_normalised_values(facade_objects, exo_objects):
-    facade_counts = defaultdict(int)
-    exo_counts    = defaultdict(int)
-    for obj in facade_objects:
-        pid = get_prop(obj, "panel_id")
-        if pid:
-            facade_counts[str(pid).strip()] += 1
+def _compute_exo_normalised(exo_objects):
+    counts = defaultdict(int)
     for obj in exo_objects:
         mid = get_prop(obj, "member_id")
         if mid:
-            exo_counts[str(mid).strip()] += 1
-    total = len(facade_objects) + len(exo_objects)
+            counts[str(mid).strip()] += 1
+    total = len(exo_objects)
     if total == 0:
-        return {}, {}
-    return (
-        {k: v / total for k, v in facade_counts.items()},
-        {k: v / total for k, v in exo_counts.items()},
-    )
+        return {}
+    return {k: v / total for k, v in counts.items()}
 
 
 # ── Collection builder ────────────────────────────────────────────────────
@@ -90,37 +78,31 @@ def transfer_modularity_model(
 ):
     print(f"[Modularity Transfer] Starting → model: {target_stream_id}")
 
-    # 1. Collect only Facade and Exoskeleton
-    facade_objects = get_collection_objects(version_root, "Facade")
-    exo_objects    = get_collection_objects(version_root, "Exoskeleton")
-    print(f"[Modularity Transfer] Facade:{len(facade_objects)} Exo:{len(exo_objects)}")
+    # 1. Collect Exoskeleton only
+    exo_objects = get_collection_objects(version_root, "Exoskeleton")
+    print(f"[Modularity Transfer] Exoskeleton: {len(exo_objects)} objects")
 
     # 2. Compute normalised values
-    facade_norm, exo_norm = _compute_normalised_values(facade_objects, exo_objects)
+    exo_norm = _compute_exo_normalised(exo_objects)
 
     # 3. Apply colours in-place
-    for obj in facade_objects:
-        pid    = str(get_prop(obj, "panel_id") or "").strip()
-        colour = _colour_for_normalised(facade_norm.get(pid, 0.0), FACADE_HIGH, FACADE_LOW)
-        _apply_colour_to_mesh(obj, colour)
     for obj in exo_objects:
         mid    = str(get_prop(obj, "member_id") or "").strip()
         colour = _colour_for_normalised(exo_norm.get(mid, 0.0), EXO_HIGH, EXO_LOW)
         _apply_colour_to_mesh(obj, colour)
-    print(f"[Modularity Transfer] Colours applied to {len(facade_objects)+len(exo_objects)} objects.")
+    print(f"[Modularity Transfer] Colours applied.")
 
-    # 4. Build new root with only Facade and Exoskeleton
+    # 4. Build root with just Exoskeleton
     new_root = Base()
     new_root["speckle_type"] = "Speckle.Core.Models.Collections.Collection"
     new_root["name"]         = "Modularity Model"
     new_root["elements"]     = [
-        _make_collection("Facade",      facade_objects),
         _make_collection("Exoskeleton", exo_objects),
     ]
 
     # 5. Send
     project_id = automate_context.automation_run_data.project_id
-    print(f"[Modularity Transfer] Sending {len(facade_objects)+len(exo_objects)} objects...")
+    print(f"[Modularity Transfer] Sending {len(exo_objects)} objects to project {project_id}...")
 
     try:
         transport = ServerTransport(stream_id=project_id, client=speckle_client)
@@ -132,16 +114,16 @@ def transfer_modularity_model(
         traceback.print_exc()
         raise
 
-    # 6. Create version
+    # 6. Commit to target model
     try:
         commit_id = speckle_client.commit.create(
             stream_id=project_id,
             object_id=obj_id,
             branch_name=target_branch,
-            message="Automate: modularity model — colour coded by repetition index",
+            message="Automate: exoskeleton — colour coded by repetition index",
             source_application="SpeckleAutomate",
         )
-        print(f"[Modularity Transfer] Version created: {commit_id}")
+        print(f"[Modularity Transfer] Committed: {commit_id}")
         return commit_id
     except Exception as e:
         import traceback
