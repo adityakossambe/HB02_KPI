@@ -192,8 +192,12 @@ def transfer_modularity_model(
     ]
 
     # ── 5. Send to target stream ──────────────────────────────────────────
+    # project_id is the stream ID for transport and commit.
+    # target_stream_id (model ID) is used as the branch name.
+    project_id = automate_context.automation_run_data.project_id
+
     transport = ServerTransport(
-        stream_id=target_stream_id,
+        stream_id=project_id,
         client=speckle_client,
     )
 
@@ -201,7 +205,7 @@ def transfer_modularity_model(
     print(f"[Modularity Transfer] Sent object: {obj_id}")
 
     commit_id = speckle_client.commit.create(
-        stream_id=target_stream_id,
+        stream_id=project_id,
         object_id=obj_id,
         branch_name=target_branch,
         message="Automate: modularity model — colour coded by repetition index",
