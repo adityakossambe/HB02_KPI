@@ -14,43 +14,43 @@ from speckle_automate import (
 )
 from pydantic import Field
 
-from kpi_cfar                  import write_cfar_sheet
-from kpi_mui                   import write_mui_sheet
-from kpi_modularity            import write_modularity_sheet
-from kpi_energy                import write_energy_sheet
-from transfer_modularity_model import transfer_modularity_model
+from kpi_cfar                import write_cfar_sheet
+from kpi_mui                 import write_mui_sheet
+from kpi_modularity          import write_modularity_sheet
+from kpi_energy              import write_energy_sheet
+from transfer_analysis_model import transfer_analysis_model
 
 
 class ISRMonth(str, Enum):
-    january  = "January"
-    february = "February"
-    march    = "March"
-    april    = "April"
-    may      = "May"
-    june     = "June"
-    july     = "July"
-    august   = "August"
-    september= "September"
-    october  = "October"
-    november = "November"
-    december = "December"
-    annual   = "Annual"
+    january   = "January"
+    february  = "February"
+    march     = "March"
+    april     = "April"
+    may       = "May"
+    june      = "June"
+    july      = "July"
+    august    = "August"
+    september = "September"
+    october   = "October"
+    november  = "November"
+    december  = "December"
+    annual    = "Annual"
 
 
 class FunctionInputs(AutomateBase):
-    modularity_model_stream_id: str = Field(
-        title="Modularity Model ID",
-        description="Model ID of the target model for the facade ISR transfer.",
+    analysis_model_id: str = Field(
+        title="Analysis Destination ID",
+        description="Model ID of the target model for the analysis transfer.",
     )
-    modularity_model_branch: str = Field(
+    analysis_model_branch: str = Field(
         default="main",
-        title="Modularity Model Branch",
-        description="Branch to commit the modularity model to.",
+        title="Analysis Model Branch",
+        description="Branch to commit the analysis model to.",
     )
     isr_month: ISRMonth = Field(
-        default=ISRMonth.january,
-        title="ISR Month",
-        description="Month to use for the ISR heatmap colouring. Select 'Annual' for the sum of all 12 months.",
+        default=ISRMonth.annual,
+        title="Analysis Period",
+        description="Period to use for the ISR heatmap colouring. Select 'Annual' for the sum of all 12 months.",
     )
 
 
@@ -81,23 +81,23 @@ def automate_function(
         automate_context.mark_run_failed(f"Excel generation failed: {e}")
         raise
 
-    # ── Modularity Transfer ───────────────────────────────────────────────
+    # ── Analysis Transfer ─────────────────────────────────────────────────
     try:
-        transfer_modularity_model(
-            automate_context  = automate_context,
-            speckle_client    = automate_context.speckle_client,
-            version_root      = version_root_object,
-            target_stream_id  = function_inputs.modularity_model_stream_id,
-            target_branch     = function_inputs.modularity_model_branch,
-            isr_month         = function_inputs.isr_month.value,
+        transfer_analysis_model(
+            automate_context = automate_context,
+            speckle_client   = automate_context.speckle_client,
+            version_root     = version_root_object,
+            target_stream_id = function_inputs.analysis_model_id,
+            target_branch    = function_inputs.analysis_model_branch,
+            isr_month        = function_inputs.isr_month.value,
         )
-        print("Modularity model transfer complete.")
+        print("Analysis model transfer complete.")
     except Exception as e:
-        automate_context.mark_run_failed(f"Modularity transfer failed: {e}")
+        automate_context.mark_run_failed(f"Analysis transfer failed: {e}")
         raise
 
     automate_context.mark_run_success(
-        "KPI report generated and modularity model updated successfully."
+        "KPI report generated and analysis model updated successfully."
     )
 
 
