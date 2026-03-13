@@ -1,92 +1,71 @@
-"""
-Main Speckle Automate function to generate all KPIs and Excel reports.
-"""
+# kpi_modularity.py
+from typing import List, Dict
 
-from datetime import datetime
-import os
-import tempfile
-from typing import Optional
-
-import pandas as pd
-from pydantic import Field, SecretStr
-from speckle_automate import AutomateBase, AutomationContext, execute_automate_function
-
-from excel_formatting import format_kpi_excel
-from kpi_cfar import calculate_cfar
-from kpi_mui import calculate_mui
-from kpi_modularity import calculate_modularity_index
-from kpi_energy import generate_energy_kpi_excel  # make sure this file is named exactly kpi_energy.py
-
-
-class FunctionInputs(AutomateBase):
-    whisper_message: SecretStr = Field(title="This is a secret message")
-    forbidden_speckle_type: str = Field(
-        title="Forbidden speckle type",
-        description="If an object has this speckle_type, it will be marked with an error."
+def calculate_modularity_index(version_root_object) -> List[Dict]:
+    """
+    Calculates Modularity Index KPI:
+    - Collections included: Facade, Exoskeleton
+    - Counts meshes per unique ID (panel_id/member_id)
+    - Calculates percentage of total elements per ID
+    - Top row shows building-level index (unique IDs / total elements)
+    
+    Returns:
+        List of dictionaries representing rows for Excel.
+    """
+    root_elements = getattr(version_root_object, "@elements", None) or getattr(
+        version_root_object, "elements", []
     )
 
+    facade_elements = []
+    exo_elements = []
 
-def _write_kpi_excel(rows: list[dict], kpi_name: str) -> Optional[str]:
-    """Write KPI table to Excel. Returns filepath or None if rows are empty."""
-    if not rows:
-        return None
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    filename = f"{kpi_name.lower().replace(' ', '_')}_{timestamp}.xlsx"
-    filepath = os.path.join(tempfile.gettempdir(), filename)
-
-    pd.DataFrame(rows).to_excel(filepath, index=False)
-    format_kpi_excel(filepath, kpi_name)
-    return filepath
-
-
-def automate_function(automate_context: AutomationContext, function_inputs: FunctionInputs) -> None:
-    # Receive the root object from Speckle
-    version_root_object = automate_context.receive_version()
-
-    # =========================
-    # Generate KPIs
-    # =========================
-    cfar_file = _write_kpi_excel(calculate_cfar(version_root_object), "CFAR")
-    mui_file = _write_kpi_excel(calculate_mui(version_root_object), "MUI")
-    mod_file = _write_kpi_excel(calculate_modularity_index(version_root_object), "Modularity")
-
-    # Energy KPI
-    root_elements = getattr(version_root_object, "@elements", None) or getattr(version_root_object, "elements", [])
-    facade = []
     for el in root_elements:
         name = getattr(el, "name", "").lower()
         objects = getattr(el, "@elements", None) or getattr(el, "elements", [])
         if "facade" in name:
-            facade.extend(objects)
+            facade_elements.extend(objects)
+        elif "exoskeleton" in name:
+            exo_elements.extend(objects)
 
-    energy_file = generate_energy_kpi_excel(facade)
-    format_kpi_excel(energy_file, "Energy")
+    all_elements = facade_elements + exo_elements
+    total_elements_count = len(all_elements) or 1  # avoid division by zero
 
-    # =========================
-    # Upload all files
-    # =========================
-    files = {"CFAR": cfar_file, "MUI": mui_file, "Modularity": mod_file, "Energy": energy_file}
-    download_urls = {}
+    counts = []
 
-    project_id = automate_context.automation_run_data.project_id
+    # Count Facade meshes by panel_id
+    facade_ids = {}
+    for mesh in facade_elements:
+        props = getattr(mesh, "properties", None)
+        if props and "panel_id" in props:
+            pid = props["panel_id"]
+            facade_ids[pid] = facade_ids.get(pid, 0) + 1
 
-    for kpi, file in files.items():
-        if not file:
-            continue
-        blob_id = automate_context.store_file_result(file)
-        file_name = os.path.basename(file)
-        # Provide a link that can be used inside the Speckle project
-        download_urls[kpi] = f"https://speckle.xyz/projects/{project_id}/files/{blob_id}/{file_name}"
+    # Count Exoskeleton meshes by member_id
+    exo_ids = {}
+    for mesh in exo_elements:
+        props = getattr(mesh, "properties", None)
+        if props and "member_id" in props:
+            mid = props["member_id"]
+            exo_ids[mid] = exo_ids.get(mid, 0) + 1
 
-    # =========================
-    # Report success
-    # =========================
-    message = "All KPIs generated successfully.\n"
-    for kpi, url in download_urls.items():
-        message += f"{kpi}: {url}\n"
+    # Combine counts
+    for pid, count in facade_ids.items():
+        counts.append({"ID": pid, "Collection": "Facade", "Count of Meshes": count})
 
-    automate_context.mark_run_success(message)
+    for mid, count in exo_ids.items():
+        counts.append({"ID": mid, "Collection": "Exoskeleton", "Count of Meshes": count})
 
+    # Add percentage of total elements
+    for row in counts:
+        row["% of Total Elements"] = (row["Count of Meshes"] / total_elements_count) * 100
 
-if __name__ == "__main__":
-    execute_automate_function(automate_function, FunctionInputs)
+    # Building-level index row
+    building_index = {
+        "ID": "Building Total",
+        "Collection": "-",
+        "Count of Meshes": "-",
+        "% of Total Elements": (len(facade_ids) + len(exo_ids)) / total_elements_count * 100
+    }
+
+    # Return as list of dicts
+    return [building_index] + counts
