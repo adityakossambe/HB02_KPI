@@ -1,59 +1,39 @@
 """
 transfer_modularity_model.py
 -----------------------------
-Transfers all 5 collections from the source (core) model to the
-modularity target model.
+Transfers all 5 collections to the modularity target model.
 
-Facade and Exoskeleton meshes get a colour assigned to properties.colors
-based on the normalised modularity value of their ID:
+Facade and Exoskeleton mesh colours are set via the top-level `colors`
+array (list of ARGB integers, one per vertex) based on normalised
+modularity value of their ID:
   - Facade:      blue (most repeated) → orange (least repeated)
   - Exoskeleton: green (most repeated) → red (least repeated)
 
-Slabs, Columns, Cores are transferred as-is.
-
-The normalised value per ID is:
-    unit_count_for_id / total_elements  (Facade + Exoskeleton combined)
+Slabs, Columns, Cores transferred as-is with no colour changes.
+Objects modified in-place on the already-received version to avoid
+resending all geometry data.
 """
 
-import copy
 from collections import defaultdict
-
 from specklepy.objects.base import Base
-from specklepy.transports.server import ServerTransport
-from specklepy.api import operations
-from specklepy.core.api.inputs.version_inputs import CreateVersionInput
-
-from _collection_helper import get_collection_objects, get_prop, id_sort_key
+from _collection_helper import get_collection_objects, get_prop
 
 
 # ── Colour helpers ────────────────────────────────────────────────────────
 
 def _lerp(a, b, t):
-    """Linear interpolate between a and b by factor t (0.0 → 1.0)."""
     return int(a + (b - a) * t)
 
-
 def _to_argb(r, g, b, a=255):
-    """Pack ARGB as a single integer (Speckle standard)."""
     return (a << 24) | (r << 16) | (g << 8) | b
 
-
-# Colour endpoints for each scale
-# Facade:      blue (high) → orange (low)
 FACADE_HIGH = (0,   120, 255)   # blue
 FACADE_LOW  = (255, 140,   0)   # orange
-
-# Exoskeleton: green (high) → red (low)
 EXO_HIGH    = (0,   200,  80)   # green
 EXO_LOW     = (220,  30,  30)   # red
 
 
 def _colour_for_normalised(normalised: float, high_rgb, low_rgb) -> int:
-    """
-    Map a normalised value (0.0–1.0) to an ARGB integer.
-    normalised=1.0 → high_rgb (most repeated)
-    normalised=0.0 → low_rgb  (least repeated)
-    """
     t = max(0.0, min(1.0, normalised))
     r = _lerp(low_rgb[0], high_rgb[0], t)
     g = _lerp(low_rgb[1], high_rgb[1], t)
@@ -61,13 +41,19 @@ def _colour_for_normalised(normalised: float, high_rgb, low_rgb) -> int:
     return _to_argb(r, g, b)
 
 
+def _apply_colour_to_mesh(obj, colour_int: int):
+    """Fill the top-level colors array with one ARGB int per vertex."""
+    try:
+        vertices = getattr(obj, "vertices", None)
+        vertex_count = len(vertices) // 3 if vertices and len(vertices) > 0 else 1
+    except Exception:
+        vertex_count = 1
+    obj["colors"] = [colour_int] * vertex_count
+
+
 # ── Normalised value calculation ──────────────────────────────────────────
 
 def _compute_normalised_values(facade_objects, exo_objects):
-    """
-    Compute normalised value per ID across both collections.
-    Returns two dicts: {id: normalised_value} for facade and exo.
-    """
     facade_counts = defaultdict(int)
     exo_counts    = defaultdict(int)
 
@@ -81,55 +67,19 @@ def _compute_normalised_values(facade_objects, exo_objects):
         if mid:
             exo_counts[str(mid).strip()] += 1
 
-    total_elements = len(facade_objects) + len(exo_objects)
-    if total_elements == 0:
+    total = len(facade_objects) + len(exo_objects)
+    if total == 0:
         return {}, {}
 
-    facade_normalised = {pid: count / total_elements for pid, count in facade_counts.items()}
-    exo_normalised    = {mid: count / total_elements for mid, count in exo_counts.items()}
-
-    return facade_normalised, exo_normalised
-
-
-# ── Colour application ────────────────────────────────────────────────────
-
-def _apply_colour(obj, colour_int: int):
-    """Write colour_int into obj.properties.colors."""
-    props = getattr(obj, "properties", None)
-    if props is None:
-        obj["properties"] = Base()
-        props = obj["properties"]
-    try:
-        props["colors"] = colour_int
-    except Exception:
-        obj["colors"] = colour_int
-    return obj
-
-
-def _colour_facade_objects(facade_objects, facade_normalised):
-    coloured = []
-    for obj in facade_objects:
-        pid = str(get_prop(obj, "panel_id") or "").strip()
-        norm_val = facade_normalised.get(pid, 0.0)
-        colour   = _colour_for_normalised(norm_val, FACADE_HIGH, FACADE_LOW)
-        coloured.append(_apply_colour(obj, colour))
-    return coloured
-
-
-def _colour_exo_objects(exo_objects, exo_normalised):
-    coloured = []
-    for obj in exo_objects:
-        mid = str(get_prop(obj, "member_id") or "").strip()
-        norm_val = exo_normalised.get(mid, 0.0)
-        colour   = _colour_for_normalised(norm_val, EXO_HIGH, EXO_LOW)
-        coloured.append(_apply_colour(obj, colour))
-    return coloured
+    return (
+        {k: v / total for k, v in facade_counts.items()},
+        {k: v / total for k, v in exo_counts.items()},
+    )
 
 
 # ── Collection builder ────────────────────────────────────────────────────
 
 def _make_collection(name: str, objects: list) -> Base:
-    """Wrap a list of objects into a named Speckle collection."""
     col = Base()
     col["speckle_type"] = "Speckle.Core.Models.Collections.Collection"
     col["name"]         = name
@@ -146,70 +96,55 @@ def transfer_modularity_model(
     target_stream_id: str,
     target_branch: str = "main",
 ):
-    """
-    Transfer all 5 collections to the modularity target model.
-    Facade and Exoskeleton get colour overrides on properties.colors.
+    print(f"[Modularity Transfer] Starting → model: {target_stream_id}")
 
-    Parameters
-    ----------
-    automate_context  : AutomationContext from main.py
-    speckle_client    : speckle_client from automate_context
-    version_root      : received version root object
-    target_stream_id  : stream ID of the modularity target model
-    target_branch     : branch to commit to (default 'main')
-    """
-
-    print(f"[Modularity Transfer] Starting → stream: {target_stream_id}")
-
-    # ── 1. Collect all 5 collections ─────────────────────────────────────
+    # ── 1. Collect ───────────────────────────────────────────────────────
     slab_objects   = get_collection_objects(version_root, "Slabs")
     column_objects = get_collection_objects(version_root, "Columns")
     core_objects   = get_collection_objects(version_root, "Cores")
     facade_objects = get_collection_objects(version_root, "Facade")
     exo_objects    = get_collection_objects(version_root, "Exoskeleton")
 
-    print(f"[Modularity Transfer] Objects — Slabs:{len(slab_objects)} Columns:{len(column_objects)} "
+    print(f"[Modularity Transfer] Slabs:{len(slab_objects)} Columns:{len(column_objects)} "
           f"Cores:{len(core_objects)} Facade:{len(facade_objects)} Exo:{len(exo_objects)}")
 
-    # ── 2. Compute normalised values ──────────────────────────────────────
-    facade_normalised, exo_normalised = _compute_normalised_values(
-        facade_objects, exo_objects
-    )
+    # ── 2. Normalised values ─────────────────────────────────────────────
+    facade_norm, exo_norm = _compute_normalised_values(facade_objects, exo_objects)
 
-    # ── 3. Apply colours to Facade and Exoskeleton ────────────────────────
-    coloured_facade = _colour_facade_objects(facade_objects, facade_normalised)
-    coloured_exo    = _colour_exo_objects(exo_objects, exo_normalised)
+    # ── 3. Apply colours in-place ─────────────────────────────────────────
+    for obj in facade_objects:
+        pid  = str(get_prop(obj, "panel_id") or "").strip()
+        colour = _colour_for_normalised(facade_norm.get(pid, 0.0), FACADE_HIGH, FACADE_LOW)
+        _apply_colour_to_mesh(obj, colour)
 
-    # ── 4. Build new root collection ──────────────────────────────────────
+    for obj in exo_objects:
+        mid  = str(get_prop(obj, "member_id") or "").strip()
+        colour = _colour_for_normalised(exo_norm.get(mid, 0.0), EXO_HIGH, EXO_LOW)
+        _apply_colour_to_mesh(obj, colour)
+
+    print("[Modularity Transfer] Colours applied, creating new version...")
+
+    # ── 4. Build new root ────────────────────────────────────────────────
     new_root = Base()
     new_root["speckle_type"] = "Speckle.Core.Models.Collections.Collection"
-    new_root["name"]     = "Grasshopper Model"
-    new_root["elements"] = [
+    new_root["name"]         = "Grasshopper Model"
+    new_root["elements"]     = [
         _make_collection("Slabs",       slab_objects),
         _make_collection("Columns",     column_objects),
         _make_collection("Cores",       core_objects),
-        _make_collection("Facade",      coloured_facade),
-        _make_collection("Exoskeleton", coloured_exo),
+        _make_collection("Facade",      facade_objects),
+        _make_collection("Exoskeleton", exo_objects),
     ]
 
-    # ── 5. Send to target model using v3 API ─────────────────────────────
-    project_id = automate_context.automation_run_data.project_id
-    print(f"[Modularity Transfer] Sending to project: {project_id}, model: {target_stream_id}")
-
+    # ── 5. Send via automate context ─────────────────────────────────────
     try:
-        transport = ServerTransport(stream_id=project_id, client=speckle_client)
-        obj_id = operations.send(base=new_root, transports=[transport])
-        print(f"[Modularity Transfer] Object sent: {obj_id}")
-
-        version_input = CreateVersionInput(
-            project_id=project_id,
+        new_version_id = automate_context.create_new_version_in_project(
+            root_object=new_root,
             model_id=target_stream_id,
-            object_id=obj_id,
-            message="Automate: modularity model — colour coded by repetition index",
+            version_message="Automate: modularity model — colour coded by repetition index",
         )
-        version = speckle_client.version.create(version_input)
-        print(f"[Modularity Transfer] Version created: {version.id}")
-        return version.id
+        print(f"[Modularity Transfer] Done. Version: {new_version_id}")
+        return new_version_id
 
     except Exception as e:
         print(f"[Modularity Transfer] FAILED: {type(e).__name__}: {e}")
