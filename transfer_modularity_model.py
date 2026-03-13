@@ -50,15 +50,16 @@ def transfer_modularity_model(
         raise
 
     try:
-        commit_id = speckle_client.commit.create(
-            stream_id=project_id,
+        from specklepy.core.api.inputs.version_inputs import CreateVersionInput
+        version_input = CreateVersionInput(
+            project_id=project_id,
+            model_id=target_stream_id,
             object_id=obj_id,
-            branch_name=target_branch,
             message="Automate: facade transfer",
-            source_application="SpeckleAutomate",
         )
-        print(f"[Modularity Transfer] Committed: {commit_id}")
-        return commit_id
+        version = speckle_client.version.create(version_input)
+        print(f"[Modularity Transfer] Version created: {version.id}")
+        return version.id
     except Exception as e:
         import traceback
         print(f"[Modularity Transfer] COMMIT ERROR: {type(e).__name__}: {e}")
