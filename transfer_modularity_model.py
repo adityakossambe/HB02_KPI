@@ -201,16 +201,23 @@ def transfer_modularity_model(
         client=speckle_client,
     )
 
-    obj_id = operations.send(base=new_root, transports=[transport])
-    print(f"[Modularity Transfer] Sent object: {obj_id}")
+    try:
+        obj_id = operations.send(base=new_root, transports=[transport])
+        print(f"[Modularity Transfer] Sent object: {obj_id}")
+    except Exception as e:
+        print(f"[Modularity Transfer] SEND FAILED: {type(e).__name__}: {e}")
+        raise
 
-    commit_id = speckle_client.commit.create(
-        stream_id=project_id,
-        object_id=obj_id,
-        branch_name=target_branch,
-        message="Automate: modularity model — colour coded by repetition index",
-        source_application="SpeckleAutomate",
-    )
-
-    print(f"[Modularity Transfer] Committed: {commit_id}")
-    return commit_id
+    try:
+        commit_id = speckle_client.commit.create(
+            stream_id=project_id,
+            object_id=obj_id,
+            branch_name=target_branch,
+            message="Automate: modularity model — colour coded by repetition index",
+            source_application="SpeckleAutomate",
+        )
+        print(f"[Modularity Transfer] Committed: {commit_id}")
+        return commit_id
+    except Exception as e:
+        print(f"[Modularity Transfer] COMMIT FAILED: {type(e).__name__}: {e}")
+        raise
