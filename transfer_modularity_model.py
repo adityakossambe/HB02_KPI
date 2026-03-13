@@ -1,9 +1,8 @@
 """
 transfer_modularity_model.py
 -----------------------------
-Transfers Facade to the modularity target model.
-Each mesh is coloured by its January ISR value using a
-Ladybug-style blue → cyan → yellow → red heatmap.
+Transfers Facade (with ISR heatmap colours) and Slabs (no colours)
+to the modularity target model.
 """
 
 from specklepy.objects.base import Base
@@ -14,22 +13,25 @@ from specklepy.api import operations
 from _collection_helper import get_collection_objects, get_prop
 
 
-# ── Ladybug-style heatmap ─────────────────────────────────────────────────
-# Colour stops: blue → cyan → green → yellow → red
-# t=0.0 → blue (lowest), t=1.0 → red (highest)
+# ── Ladybug-style heatmap: blue → light blue → yellow → orange → red ─────
 
 _STOPS = [
-    (0.00, (74,  144, 226)),   # blue       (lowest)
+    (0.00, (74,  144, 226)),   # blue
     (0.20, (142, 195, 235)),   # light blue
     (0.40, (220, 240, 180)),   # light yellow-green
     (0.60, (255, 235,  80)),   # yellow
     (0.80, (255, 140,   0)),   # orange
-    (1.00, (220,  30,   0)),   # red        (highest)
+    (1.00, (220,  30,   0)),   # red
 ]
+
+MONTH_INDEX = {
+    "January": 0, "February": 1, "March": 2, "April": 3,
+    "May": 4, "June": 5, "July": 6, "August": 7,
+    "September": 8, "October": 9, "November": 10, "December": 11,
+}
 
 
 def _lerp_colour(t: float) -> int:
-    """Map t (0.0–1.0) to an ARGB int using Ladybug colour stops."""
     t = max(0.0, min(1.0, t))
     for i in range(len(_STOPS) - 1):
         t0, c0 = _STOPS[i]
@@ -44,19 +46,20 @@ def _lerp_colour(t: float) -> int:
     return (0xFF << 24) | (r << 16) | (g << 8) | b
 
 
-def _get_jan_isr(obj) -> float | None:
-    """Extract the January (first) ISR value from the isr_value property."""
+def _get_isr_value(obj, isr_month: str) -> float | None:
+    """Extract ISR value for the selected month or annual sum."""
     raw = get_prop(obj, "isr_value")
     if raw is None:
         return None
     try:
-        first = str(raw).split(",")[0].strip()
-        return float(first)
+        values = [float(v.strip()) for v in str(raw).split(",")]
+        if isr_month == "Annual":
+            return sum(values)
+        idx = MONTH_INDEX.get(isr_month, 0)
+        return values[idx] if idx < len(values) else None
     except Exception:
         return None
 
-
-# ── Collection builder ────────────────────────────────────────────────────
 
 def _make_collection(name, objects):
     col = Base()
@@ -66,54 +69,57 @@ def _make_collection(name, objects):
     return col
 
 
-# ── Main ──────────────────────────────────────────────────────────────────
-
 def transfer_modularity_model(
     automate_context,
     speckle_client,
     version_root,
     target_stream_id,
     target_branch="main",
+    isr_month="January",
 ):
-    print(f"[Modularity Transfer] Starting → model: {target_stream_id}")
+    print(f"[Modularity Transfer] Starting → model: {target_stream_id}, month: {isr_month}")
 
     facade_objects = get_collection_objects(version_root, "Facade")
-    print(f"[Modularity Transfer] Facade: {len(facade_objects)} objects")
+    slab_objects   = get_collection_objects(version_root, "Slabs")
+    print(f"[Modularity Transfer] Facade:{len(facade_objects)} Slabs:{len(slab_objects)}")
 
-    # 1. Extract January ISR values
-    jan_values = []
+    # 1. Extract ISR values
+    isr_values = []
     for obj in facade_objects:
-        v = _get_jan_isr(obj)
+        v = _get_isr_value(obj, isr_month)
         if v is not None:
-            jan_values.append(v)
+            isr_values.append(v)
 
-    if not jan_values:
-        print("[Modularity Transfer] WARNING: No ISR values found, using red for all.")
+    if not isr_values:
+        print("[Modularity Transfer] WARNING: No ISR values found.")
         min_val = max_val = 0.0
     else:
-        min_val = min(jan_values)
-        max_val = max(jan_values)
-        print(f"[Modularity Transfer] Jan ISR range: {min_val} → {max_val}")
+        min_val = min(isr_values)
+        max_val = max(isr_values)
+        print(f"[Modularity Transfer] ISR range ({isr_month}): {min_val} → {max_val}")
 
-    # 2. Apply colour per mesh
+    # 2. Apply colour per facade mesh
     val_range = max_val - min_val if max_val != min_val else 1.0
     for obj in facade_objects:
-        v = _get_jan_isr(obj)
+        v = _get_isr_value(obj, isr_month)
         t = (v - min_val) / val_range if v is not None else 0.0
         colour = _lerp_colour(t)
         obj["renderMaterial"] = RenderMaterial(
-            name=f"ISR_Jan_{round(v or 0, 1)}",
+            name=f"ISR_{isr_month}_{round(v or 0, 1)}",
             diffuse=colour,
             opacity=1.0,
         )
 
-    print("[Modularity Transfer] Colours applied.")
+    print(f"[Modularity Transfer] Colours applied.")
 
-    # 3. Build root and send
+    # 3. Build root with Facade + Slabs
     new_root = Base()
     new_root["speckle_type"] = "Speckle.Core.Models.Collections.Collection"
     new_root["name"]         = "Modularity Model"
-    new_root["elements"]     = [_make_collection("Facade", facade_objects)]
+    new_root["elements"]     = [
+        _make_collection("Facade", facade_objects),
+        _make_collection("Slabs",  slab_objects),
+    ]
 
     project_id = automate_context.automation_run_data.project_id
     print(f"[Modularity Transfer] Sending...")
@@ -132,7 +138,7 @@ def transfer_modularity_model(
         new_version_id = automate_context.create_new_version_in_project(
             root_object=new_root,
             model_id=target_stream_id,
-            version_message="Automate: facade — January ISR heatmap",
+            version_message=f"Automate: facade ISR heatmap — {isr_month}",
         )
         print(f"[Modularity Transfer] Version created: {new_version_id}")
         return new_version_id
