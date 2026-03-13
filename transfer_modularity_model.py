@@ -1,15 +1,12 @@
 """
 transfer_modularity_model.py
 -----------------------------
-Transfers Facade and Exoskeleton to the modularity target model.
+Transfers the Exoskeleton collection as-is to the modularity target model.
 """
-
 from specklepy.objects.base import Base
 from specklepy.transports.server import ServerTransport
 from specklepy.api import operations
-
 from _collection_helper import get_collection_objects
-
 
 def _make_collection(name, objects):
     col = Base()
@@ -17,7 +14,6 @@ def _make_collection(name, objects):
     col["name"]         = name
     col["elements"]     = objects
     return col
-
 
 def transfer_modularity_model(
     automate_context,
@@ -28,17 +24,13 @@ def transfer_modularity_model(
 ):
     print(f"[Modularity Transfer] Starting → model: {target_stream_id}")
 
-    facade_objects = get_collection_objects(version_root, "Facade")
-    exo_objects    = get_collection_objects(version_root, "Exoskeleton")
-    print(f"[Modularity Transfer] Facade: {len(facade_objects)} Exo: {len(exo_objects)}")
+    exo_objects = get_collection_objects(version_root, "Exoskeleton")
+    print(f"[Modularity Transfer] Exoskeleton: {len(exo_objects)} objects")
 
     new_root = Base()
     new_root["speckle_type"] = "Speckle.Core.Models.Collections.Collection"
     new_root["name"]         = "Modularity Model"
-    new_root["elements"]     = [
-        _make_collection("Facade",      facade_objects),
-        _make_collection("Exoskeleton", exo_objects),
-    ]
+    new_root["elements"]     = [_make_collection("Exoskeleton", exo_objects)]
 
     project_id = automate_context.automation_run_data.project_id
     print(f"[Modularity Transfer] Sending...")
@@ -57,7 +49,7 @@ def transfer_modularity_model(
         new_version_id = automate_context.create_new_version_in_project(
             root_object=new_root,
             model_id=target_stream_id,
-            version_message="Automate: facade + exoskeleton transfer",
+            version_message="Automate: exoskeleton transfer",
         )
         print(f"[Modularity Transfer] Version created: {new_version_id}")
         return new_version_id
