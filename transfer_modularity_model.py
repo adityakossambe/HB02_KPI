@@ -19,8 +19,8 @@ import copy
 from collections import defaultdict
 
 from specklepy.objects.base import Base
-from specklepy.transports.server import ServerTransport
-from specklepy.api import operations
+
+
 
 from _collection_helper import get_collection_objects, get_prop, id_sort_key
 
@@ -191,33 +191,18 @@ def transfer_modularity_model(
         _make_collection("Exoskeleton", coloured_exo),
     ]
 
-    # ── 5. Send to target stream ──────────────────────────────────────────
-    # project_id is the stream ID for transport and commit.
-    # target_stream_id (model ID) is used as the branch name.
-    project_id = automate_context.automation_run_data.project_id
-
-    transport = ServerTransport(
-        stream_id=project_id,
-        client=speckle_client,
-    )
-
+    # ── 5. Send using Automate context ───────────────────────────────────
+    print(f"[Modularity Transfer] Sending {sum([len(slab_objects), len(column_objects), len(core_objects), len(facade_objects), len(exo_objects)])} objects...")
     try:
-        obj_id = operations.send(base=new_root, transports=[transport])
-        print(f"[Modularity Transfer] Sent object: {obj_id}")
-    except Exception as e:
-        print(f"[Modularity Transfer] SEND FAILED: {type(e).__name__}: {e}")
-        raise
-
-    try:
-        commit_id = speckle_client.commit.create(
-            stream_id=project_id,
-            object_id=obj_id,
-            branch_name=target_branch,
-            message="Automate: modularity model — colour coded by repetition index",
-            source_application="SpeckleAutomate",
+        new_version_id = automate_context.create_new_version_in_project(
+            root_object=new_root,
+            model_id=target_stream_id,
+            version_message="Automate: modularity model — colour coded by repetition index",
         )
-        print(f"[Modularity Transfer] Committed: {commit_id}")
-        return commit_id
+        print(f"[Modularity Transfer] New version created: {new_version_id}")
+        return new_version_id
     except Exception as e:
-        print(f"[Modularity Transfer] COMMIT FAILED: {type(e).__name__}: {e}")
+        print(f"[Modularity Transfer] FAILED: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
         raise
