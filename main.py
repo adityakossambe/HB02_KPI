@@ -15,7 +15,7 @@ from excel_formatting import format_kpi_excel
 from kpi_cfar import calculate_cfar
 from kpi_mui import calculate_mui
 from kpi_modularity import calculate_modularity_index
-from kpi_energy import generate_energy_kpi_excel  # make sure this file is named exactly kpi_energy.py
+from kpi_energy_performance import generate_energy_kpi_excel  # make sure this file is named exactly kpi_energy_performance.py
 
 
 class FunctionInputs(AutomateBase):
