@@ -129,9 +129,10 @@ def _colour_exo_objects(exo_objects, exo_normalised):
 
 def _make_collection(name: str, objects: list) -> Base:
     """Wrap a list of objects into a named Speckle collection."""
-    col = Base(speckle_type="Speckle.Core.Models.Collections.Collection")
-    col["name"]     = name
-    col["elements"] = objects
+    col = Base()
+    col["speckle_type"] = "Speckle.Core.Models.Collections.Collection"
+    col["name"]         = name
+    col["elements"]     = objects
     return col
 
 
@@ -179,7 +180,8 @@ def transfer_modularity_model(
     coloured_exo    = _colour_exo_objects(exo_objects, exo_normalised)
 
     # ── 4. Build new root collection ──────────────────────────────────────
-    new_root = Base(speckle_type="Speckle.Core.Models.Collections.Collection")
+    new_root = Base()
+    new_root["speckle_type"] = "Speckle.Core.Models.Collections.Collection"
     new_root["name"]     = "Grasshopper Model"
     new_root["elements"] = [
         _make_collection("Slabs",       slab_objects),
