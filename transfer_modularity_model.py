@@ -19,8 +19,9 @@ import copy
 from collections import defaultdict
 
 from specklepy.objects.base import Base
-
-
+from specklepy.transports.server import ServerTransport
+from specklepy.api import operations
+from specklepy.core.api.inputs.version_inputs import CreateVersionInput
 
 from _collection_helper import get_collection_objects, get_prop, id_sort_key
 
@@ -191,16 +192,25 @@ def transfer_modularity_model(
         _make_collection("Exoskeleton", coloured_exo),
     ]
 
-    # ── 5. Send using Automate context ───────────────────────────────────
-    print(f"[Modularity Transfer] Sending {sum([len(slab_objects), len(column_objects), len(core_objects), len(facade_objects), len(exo_objects)])} objects...")
+    # ── 5. Send to target model using v3 API ─────────────────────────────
+    project_id = automate_context.automation_run_data.project_id
+    print(f"[Modularity Transfer] Sending to project: {project_id}, model: {target_stream_id}")
+
     try:
-        new_version_id = automate_context.create_new_version_in_project(
-            root_object=new_root,
+        transport = ServerTransport(stream_id=project_id, client=speckle_client)
+        obj_id = operations.send(base=new_root, transports=[transport])
+        print(f"[Modularity Transfer] Object sent: {obj_id}")
+
+        version_input = CreateVersionInput(
+            project_id=project_id,
             model_id=target_stream_id,
-            version_message="Automate: modularity model — colour coded by repetition index",
+            object_id=obj_id,
+            message="Automate: modularity model — colour coded by repetition index",
         )
-        print(f"[Modularity Transfer] New version created: {new_version_id}")
-        return new_version_id
+        version = speckle_client.version.create(version_input)
+        print(f"[Modularity Transfer] Version created: {version.id}")
+        return version.id
+
     except Exception as e:
         print(f"[Modularity Transfer] FAILED: {type(e).__name__}: {e}")
         import traceback
