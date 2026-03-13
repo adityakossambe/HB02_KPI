@@ -85,3 +85,13 @@ def get_level(obj) -> str:
     if hasattr(val, "name"):
         return str(val.name)
     return str(val)
+
+
+import re
+
+def natural_sort_key(s: str):
+    """
+    Sort key that handles embedded numbers correctly.
+    e.g. Level 2 < Level 10, Q1 < Q2 < Q10, T1 < T2
+    """
+    return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', str(s))]

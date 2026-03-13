@@ -21,7 +21,7 @@ Output layout:
 
 from openpyxl.utils import get_column_letter
 
-from _collection_helper import get_collection_objects, get_prop
+from _collection_helper import get_collection_objects, get_prop, natural_sort_key
 from excel_formatter import (
     style_kpi_heading,
     style_column_headers,
@@ -72,7 +72,7 @@ def write_energy_sheet(ws, root):
         rows.append((str(panel_id), str(mesh_id), monthly))
 
     # Sort by panel_id so same types group together
-    rows.sort(key=lambda x: x[0])
+    rows.sort(key=lambda x: natural_sort_key(x[0]))
 
     first_data_row = 4
     last_data_row  = 3 + len(rows)

@@ -3,7 +3,7 @@ kpi_mui.py — Material Usage Intensity
 """
 
 from collections import defaultdict
-from _collection_helper import get_collection_objects, get_prop, get_level
+from _collection_helper import get_collection_objects, get_prop, get_level, natural_sort_key
 from excel_formatter import (
     style_kpi_heading, style_column_headers, style_total_row,
     style_data_row, set_column_widths, freeze_below_headers,
@@ -35,7 +35,7 @@ def write_mui_sheet(ws, root):
     for obj in core_objects:
         core_vol_by_level[get_level(obj)] += float(get_prop(obj, "core_volume")   or 0)
 
-    all_levels = sorted(set(list(slab_vol_by_level) + list(col_vol_by_level) + list(core_vol_by_level)))
+    all_levels = sorted(set(list(slab_vol_by_level) + list(col_vol_by_level) + list(core_vol_by_level)), key=natural_sort_key)
 
     first_data_row = 4
     last_data_row  = 3 + len(all_levels)
