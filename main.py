@@ -3,6 +3,11 @@
 Use the automation_context module to wrap your function in an Automate context helper.
 """
 
+from datetime import datetime
+import os
+import tempfile
+
+import pandas as pd
 from pydantic import Field, SecretStr
 from speckle_automate import (
     AutomateBase,
@@ -10,8 +15,11 @@ from speckle_automate import (
     execute_automate_function,
 )
 
-from flatten import flatten_base
-
+from excel_format import format_kpi_excel
+from kpi_cfar import calculate_cfar
+from kpi_mui import calculate_mui
+from kpi_modularity import calculate_modularity_index
+from kpi_energy_performance import generate_energy_kpi_excel
 
 class FunctionInputs(AutomateBase):
     """These are function author-defined values.
@@ -32,135 +40,92 @@ class FunctionInputs(AutomateBase):
     )
 
 
+def _write_kpi_excel(rows: list[dict], kpi_name: str) -> str:
+    """Write a KPI table to a timestamped Excel file and return its path."""
+
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    filename = f"{kpi_name.lower().replace(' ', '_')}_{timestamp}.xlsx"
+    filepath = os.path.join(tempfile.gettempdir(), filename)
+
+    pd.DataFrame(rows).to_excel(filepath, index=False)
+    format_kpi_excel(filepath, kpi_name)
+
+    return filepath
+
+
 def automate_function(
     automate_context: AutomationContext,
     function_inputs: FunctionInputs,
 ) -> None:
-    """This is an example Speckle Automate function.
+    """Generates all KPIs and Excel reports for the building model.
 
     Args:
-        automate_context: A context-helper object that carries relevant information
-            about the runtime context of this function.
-            It gives access to the Speckle project data that triggered this run.
-            It also has convenient methods for attaching results to the Speckle model.
-        function_inputs: An instance object matching the defined schema.
+        automate_context: Context with Speckle project and run info.
+        function_inputs: Input schema (can include month selection later).
     """
-    import pandas as pd
-    from datetime import datetime
 
     version_root_object = automate_context.receive_version()
 
-    # Get root collections
+    # =========================
+    # 1️⃣ CFAR KPI
+    # =========================
+    cfar_rows = calculate_cfar(version_root_object)
+    cfar_file = _write_kpi_excel(cfar_rows, "CFAR")
+
+    # =========================
+    # 2️⃣ MUI KPI
+    # =========================
+    mui_rows = calculate_mui(version_root_object)
+    mui_file = _write_kpi_excel(mui_rows, "MUI")
+
+    # =========================
+    # 3️⃣ Modularity KPI
+    # =========================
+    mod_file = calculate_modularity_index(version_root_object)
+    format_kpi_excel(mod_file, "Modularity")
+
+    # =========================
+    # 4️⃣ Energy KPI
+    # =========================
     root_elements = getattr(version_root_object, "@elements", None) or getattr(
         version_root_object, "elements", []
     )
-
-    cores = []
-    columns = []
-    slabs = []
-
-    # Identify collections
+    facade = []
     for el in root_elements:
         name = getattr(el, "name", "").lower()
         objects = getattr(el, "@elements", None) or getattr(el, "elements", [])
+        if "facade" in name:
+            facade.extend(objects)
 
-        if "core" in name:
-            cores.extend(objects)
+    energy_file = generate_energy_kpi_excel(facade)
+    format_kpi_excel(energy_file, "Energy")
 
-        elif "column" in name:
-            columns.extend(objects)
+    # =========================
+    # Upload all Excel files
+    # =========================
+    files = {
+        "CFAR": cfar_file,
+        "MUI": mui_file,
+        "Modularity": mod_file,
+        "Energy": energy_file,
+    }
 
-        elif "slab" in name:
-            slabs.extend(objects)
+    download_urls = {}
+    for key, file in files.items():
+        blob_id = automate_context.store_file_result(file)
+        project_id = automate_context.project_id
+        file_name = os.path.basename(file)
+        download_urls[key] = f"https://speckle.xyz/projects/{project_id}/files/{blob_id}/{file_name}"
 
-    # Dictionaries to aggregate area per level
-    core_area_by_level = {}
-    column_area_by_level = {}
-    slab_area_by_level = {}
+    # =========================
+    # Mark run success with all links
+    # =========================
+    message = "All KPIs generated successfully.\n"
+    for kpi, url in download_urls.items():
+        message += f"{kpi}: {url}\n"
 
-    def add_area(obj, container):
-        props = getattr(obj, "properties", None)
-        if not props:
-            return
-
-        area = props.get("Area")
-        level = props.get("Level")
-
-        if area is None or level is None:
-            return
-
-        container[level] = container.get(level, 0) + area
-
-    for obj in cores:
-        add_area(obj, core_area_by_level)
-
-    for obj in columns:
-        add_area(obj, column_area_by_level)
-
-    for obj in slabs:
-        add_area(obj, slab_area_by_level)
-
-    # Determine roof level (highest slab level)
-    roof_level = max(slab_area_by_level.keys()) if slab_area_by_level else None
-
-    rows = []
-
-    for level in sorted(slab_area_by_level.keys()):
-
-        if level == roof_level:
-            continue
-
-        slab_area = slab_area_by_level.get(level, 0)
-        core_area = core_area_by_level.get(level, 0)
-        column_area = column_area_by_level.get(level, 0)
-
-        service_area = core_area + column_area
-        percent = (service_area / slab_area) * 100 if slab_area else 0
-
-        rows.append(
-            {
-                "Level": level,
-                "Slab Area": slab_area,
-                "Core + Column Area": service_area,
-                "Net Usable Area": slab_area - service_area,
-                "Service %": percent,
-            }
-        )
-
-    df = pd.DataFrame(rows)
-
-    if not df.empty:
-        avg_percent = df["Service %"].mean()
-
-        avg_row = {
-            "Level": "Average",
-            "Slab Area": "",
-            "Core + Column Area": "",
-            "Net Usable Area": "",
-            "Service %": avg_percent,
-        }
-
-        df = pd.concat([df, pd.DataFrame([avg_row])], ignore_index=True)
-
-    # Create timestamped Excel file
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    filepath = f"/tmp/service_ratio_{timestamp}.xlsx"
-
-    df.to_excel(filepath, index=False)
-
-    # Upload the file and get its blob ID
-    blob_id = automate_context.store_file_result(filepath)
-
-    # Construct a full downloadable URL
-    project_id = automate_context.project_id
-    file_name = filepath.split("/")[-1]
-    download_url = f"https://speckle.xyz/projects/{project_id}/files/{blob_id}/{file_name}"
-
-    automate_context.mark_run_success(
-    f"Core + Column vs Slab area analysis completed successfully.\n"
-    f"Download Excel file: {download_url}"
-)  
-
+    automate_context.mark_run_success(message)
+    
     
 
 def automate_function_without_inputs(automate_context: AutomationContext) -> None:
