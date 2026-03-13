@@ -3,6 +3,9 @@ _collection_helper.py
 ---------------------
 Shared helper to extract a named sub-collection from the Grasshopper Model
 root object and return its child elements as a flat list.
+
+The root is a RootCollection. Named sub-collections (Slabs, Columns, etc.)
+are children inside root.elements, each with a `name` property.
 """
 
 from flatten import flatten_base
@@ -10,39 +13,33 @@ from flatten import flatten_base
 
 def get_collection_objects(root, collection_name: str) -> list:
     """
-    Retrieve all mesh objects from a named sub-collection on the root.
-    Tries multiple access patterns to handle different Speckle serialisation styles.
+    Find a named sub-collection inside root.elements and return
+    all its child mesh objects as a flat list.
     """
-    collection = None
+    # Get the top-level elements list from root
+    root_elements = getattr(root, "elements", None) or getattr(root, "@elements", None)
 
-    # Try direct attribute, @-prefixed, and dynamic prop lookup
-    for key in [collection_name, f"@{collection_name}"]:
-        collection = getattr(root, key, None)
-        if collection is not None:
+    if root_elements is None:
+        print(f"[WARN] Root has no 'elements' — cannot find '{collection_name}'.")
+        return []
+
+    # Find the matching collection by name
+    target_collection = None
+    for element in root_elements:
+        element_name = getattr(element, "name", None)
+        if element_name and element_name.strip() == collection_name:
+            target_collection = element
             break
 
-    # Also try iterating root's dynamic attributes if nothing found yet
-    if collection is None:
-        try:
-            for key in root.get_dynamic_member_names():
-                if key.strip("@") == collection_name:
-                    collection = root[key]
-                    break
-        except Exception:
-            pass
-
-    if collection is None:
-        print(f"[WARN] Collection '{collection_name}' not found on root object.")
-        print(f"[DEBUG] Root type: {type(root)}, speckle_type: {getattr(root, 'speckle_type', 'N/A')}")
-        try:
-            print(f"[DEBUG] Root dynamic members: {list(root.get_dynamic_member_names())}")
-        except Exception:
-            pass
+    if target_collection is None:
+        print(f"[WARN] Collection '{collection_name}' not found in root.elements.")
+        available = [getattr(e, "name", "?") for e in root_elements]
+        print(f"[DEBUG] Available collections: {available}")
         return []
 
     # Flatten the collection, exclude the collection container itself (last item)
-    all_objects = list(flatten_base(collection))
-    if all_objects and all_objects[-1] is collection:
+    all_objects = list(flatten_base(target_collection))
+    if all_objects and all_objects[-1] is target_collection:
         all_objects = all_objects[:-1]
 
     print(f"[INFO] Collection '{collection_name}': {len(all_objects)} objects found.")
@@ -52,7 +49,7 @@ def get_collection_objects(root, collection_name: str) -> list:
 def get_prop(obj, *keys, default=None):
     """
     Safely retrieve a property from a Speckle Base object.
-    Checks direct attributes first, then obj.properties, for each key.
+    Checks direct attributes, then obj.properties (dict or object), for each key.
     """
     for key in keys:
         # Direct attribute
@@ -64,14 +61,13 @@ def get_prop(obj, *keys, default=None):
         if props is not None:
             val = getattr(props, key, None)
             if val is None:
-                # properties may be a dict
                 try:
                     val = props[key]
                 except (KeyError, TypeError):
                     pass
             if val is not None:
                 return val
-        # Try dynamic member access
+        # Dynamic member access
         try:
             val = obj[key]
             if val is not None:
