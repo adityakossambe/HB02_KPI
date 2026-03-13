@@ -5,7 +5,7 @@ kpi_cfar.py — Column Free Area Ratio
 from collections import defaultdict
 from openpyxl.utils import get_column_letter
 
-from _collection_helper import get_collection_objects, get_prop, get_level, natural_sort_key
+from _collection_helper import get_collection_objects, get_prop, get_level, level_sort_key
 from excel_formatter import (
     style_kpi_heading, style_column_headers, style_total_row,
     style_data_row, set_column_widths, freeze_below_headers,
@@ -32,7 +32,7 @@ def write_cfar_sheet(ws, root):
     for obj in core_objects:
         core_by_level[get_level(obj)]   += float(get_prop(obj, "core_area")   or 0)
 
-    all_levels = sorted(set(list(slab_by_level) + list(column_by_level) + list(core_by_level)), key=natural_sort_key)
+    all_levels = sorted(set(list(slab_by_level) + list(column_by_level) + list(core_by_level)), key=level_sort_key)
 
     first_data_row = 4
     last_data_row  = 3 + len(all_levels)

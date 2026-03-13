@@ -27,7 +27,7 @@ Output layout:
 from collections import defaultdict
 from openpyxl.styles import Font, PatternFill
 
-from _collection_helper import get_collection_objects, get_prop, natural_sort_key
+from _collection_helper import get_collection_objects, get_prop, id_sort_key
 from excel_formatter import (
     style_kpi_heading,
     style_data_row,
@@ -80,7 +80,7 @@ def _write_section(ws, start_row, section_title, id_counts, total_elements):
     ws.row_dimensions[header_row].height = 20
 
     # Data rows
-    for i, (uid, count) in enumerate(sorted(id_counts.items(), key=lambda x: natural_sort_key(x[0]))):
+    for i, (uid, count) in enumerate(sorted(id_counts.items(), key=lambda x: id_sort_key(x[0]))):
         r = header_row + 1 + i
         normalised = count / total_elements if total_elements > 0 else 0.0
         ws.cell(row=r, column=1, value=uid)

@@ -89,9 +89,21 @@ def get_level(obj) -> str:
 
 import re
 
-def natural_sort_key(s: str):
+
+def level_sort_key(s):
+    """Sort levels numerically — levels are floats like -44.5, 0.0, 90.5."""
+    try:
+        return float(s)
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def id_sort_key(s):
     """
-    Sort key that handles embedded numbers correctly.
-    e.g. Level 2 < Level 10, Q1 < Q2 < Q10, T1 < T2
+    Sort IDs by letter prefix then number suffix.
+    e.g. LI1 < LI2 < LI10 < NQ1 < Q1 < Q2 < Q10 < T1 < T9 < T10
     """
-    return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', str(s))]
+    m = re.match(r'^([A-Za-z]+)(\d+)$', str(s).strip())
+    if m:
+        return (m.group(1).upper(), int(m.group(2)))
+    return (str(s).upper(), 0)
