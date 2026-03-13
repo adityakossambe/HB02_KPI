@@ -1,31 +1,19 @@
-"""
-kpi_energy_performance.py
-Generates the Energy & Resource Performance KPI Excel sheet from a Speckle Facade collection.
-Each row includes: Panel ID, Mesh ID, monthly ISR values, and annual total.
-"""
+# kpi_energy.py
+from typing import List, Dict
 
-import os
-import tempfile
-from datetime import datetime
-import pandas as pd
-from typing import List
-
-def generate_energy_kpi_excel(facade_meshes: List) -> str:
+def generate_energy_kpi_data(facade_meshes) -> List[Dict]:
     """
-    Generates Excel sheet for Energy & Resource Performance KPI.
-
+    Returns data for Energy KPI (ISR values) without writing Excel.
+    
     Args:
-        facade_meshes (list): List of facade mesh objects from Speckle, 
-                              each having properties: 'panel_id', 'id', 'isr_value'
-                              where 'isr_value' is a comma-separated string of 12 monthly values.
-
+        facade_meshes: list of facade mesh objects with 'panel_id', 'id', 'isr_value'
+    
     Returns:
-        str: Filepath of the generated Excel file.
+        List of dictionaries representing table rows for Excel.
     """
-
     rows = []
 
-    # Sort meshes by panel_id
+    # Sort by panel_id
     sorted_meshes = sorted(facade_meshes, key=lambda m: getattr(m, "properties", {}).get("panel_id", ""))
 
     for mesh in sorted_meshes:
@@ -45,8 +33,10 @@ def generate_energy_kpi_excel(facade_meshes: List) -> str:
         except Exception:
             continue
 
-        annual_total = sum(monthly_values)
+        if len(monthly_values) != 12:
+            continue
 
+        annual_total = sum(monthly_values)
         row = {
             "Panel ID": panel_id,
             "Mesh ID": mesh_id,
@@ -62,21 +52,8 @@ def generate_energy_kpi_excel(facade_meshes: List) -> str:
             "Oct": monthly_values[9],
             "Nov": monthly_values[10],
             "Dec": monthly_values[11],
-            "Annual Total": annual_total
+            "Annual Total": annual_total,
         }
-
         rows.append(row)
 
-    df = pd.DataFrame(rows)
-
-    # Optional: Sort by Panel ID in Excel
-    df.sort_values(by="Panel ID", inplace=True)
-
-    # Create timestamped Excel file
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    filename = f"energy_performance_{timestamp}.xlsx"
-    filepath = os.path.join(tempfile.gettempdir(), filename)
-
-    df.to_excel(filepath, index=False)
-
-    return filepath
+    return rows

@@ -1,5 +1,5 @@
 """
-Main Speckle Automate function to generate all KPIs and Excel reports.
+Main Speckle Automate function to generate all KPIs in a single Excel workbook.
 """
 
 from datetime import datetime
@@ -15,7 +15,7 @@ from excel_formatting import format_kpi_excel
 from kpi_cfar import calculate_cfar
 from kpi_mui import calculate_mui
 from kpi_modularity import calculate_modularity_index
-from kpi_energy import generate_energy_kpi_excel  # make sure this file is named exactly kpi_energy.py
+from kpi_energy import generate_energy_kpi_data  # updated function returns data
 
 
 class FunctionInputs(AutomateBase):
@@ -26,16 +26,29 @@ class FunctionInputs(AutomateBase):
     )
 
 
-def _write_kpi_excel(rows: list[dict], kpi_name: str) -> Optional[str]:
-    """Write KPI table to Excel. Returns filepath or None if rows are empty."""
-    if not rows:
-        return None
+def _write_all_kpis_to_excel(kpi_data: dict[str, list[dict]]) -> str:
+    """
+    Writes all KPIs to a single Excel workbook with each KPI as a separate sheet.
+
+    Args:
+        kpi_data: dictionary where keys are sheet names, values are lists of row dictionaries.
+
+    Returns:
+        Path to the generated Excel file.
+    """
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    filename = f"{kpi_name.lower().replace(' ', '_')}_{timestamp}.xlsx"
+    filename = f"building_kpis_{timestamp}.xlsx"
     filepath = os.path.join(tempfile.gettempdir(), filename)
 
-    pd.DataFrame(rows).to_excel(filepath, index=False)
-    format_kpi_excel(filepath, kpi_name)
+    with pd.ExcelWriter(filepath, engine="xlsxwriter") as writer:
+        for sheet_name, rows in kpi_data.items():
+            if not rows:
+                continue
+            df = pd.DataFrame(rows)
+            df.to_excel(writer, sheet_name=sheet_name, index=False)
+            writer.sheets[sheet_name] = writer.book.get_worksheet_by_name(sheet_name)
+            format_kpi_excel(filepath, sheet_name)
+
     return filepath
 
 
@@ -44,11 +57,13 @@ def automate_function(automate_context: AutomationContext, function_inputs: Func
     version_root_object = automate_context.receive_version()
 
     # =========================
-    # Generate KPIs
+    # Prepare KPI data
     # =========================
-    cfar_file = _write_kpi_excel(calculate_cfar(version_root_object), "CFAR")
-    mui_file = _write_kpi_excel(calculate_mui(version_root_object), "MUI")
-    mod_file = _write_kpi_excel(calculate_modularity_index(version_root_object), "Modularity")
+    kpi_data = {}
+
+    kpi_data["CFAR"] = calculate_cfar(version_root_object)
+    kpi_data["MUI"] = calculate_mui(version_root_object)
+    kpi_data["Modularity"] = calculate_modularity_index(version_root_object)
 
     # Energy KPI
     root_elements = getattr(version_root_object, "@elements", None) or getattr(version_root_object, "elements", [])
@@ -59,34 +74,40 @@ def automate_function(automate_context: AutomationContext, function_inputs: Func
         if "facade" in name:
             facade.extend(objects)
 
-    energy_file = generate_energy_kpi_excel(facade)
-    format_kpi_excel(energy_file, "Energy")
+    kpi_data["Energy"] = generate_energy_kpi_data(facade)
 
     # =========================
-    # Upload all files
+    # Write all KPIs to a single Excel file
     # =========================
-    files = {"CFAR": cfar_file, "MUI": mui_file, "Modularity": mod_file, "Energy": energy_file}
-    download_urls = {}
-
-    project_id = automate_context.automation_run_data.project_id
-
-    for kpi, file in files.items():
-        if not file:
-            continue
-        blob_id = automate_context.store_file_result(file)
-        file_name = os.path.basename(file)
-        # Provide a link that can be used inside the Speckle project
-        download_urls[kpi] = f"https://speckle.xyz/projects/{project_id}/files/{blob_id}/{file_name}"
+    excel_file = _write_all_kpis_to_excel(kpi_data)
 
     # =========================
-    # Report success
+    # Upload file and report
     # =========================
-    message = "All KPIs generated successfully.\n"
-    for kpi, url in download_urls.items():
-        message += f"{kpi}: {url}\n"
+    blob_id = automate_context.store_file_result(excel_file)
+    file_name = os.path.basename(excel_file)
+    download_message = f"Blob ID: {blob_id} (filename: {file_name})"
 
+    message = f"All KPIs generated successfully in a single Excel file.\nDownload: {download_message}"
     automate_context.mark_run_success(message)
 
 
+def automate_function_without_inputs(automate_context: AutomationContext) -> None:
+    """A function example without inputs.
+
+    If your function does not need any input variables,
+     besides what the automation context provides,
+     the inputs argument can be omitted.
+    """
+    pass
+
+
+# make sure to call the function with the executor
 if __name__ == "__main__":
+    # NOTE: always pass in the automate function by its reference; do not invoke it!
+
+    # Pass in the function reference with the inputs schema to the executor.
     execute_automate_function(automate_function, FunctionInputs)
+
+    # If the function has no arguments, the executor can handle it like so
+    # execute_automate_function(automate_function_without_inputs)
