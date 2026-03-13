@@ -19,11 +19,12 @@ from _collection_helper import get_collection_objects, get_prop
 # t=0.0 → blue (lowest), t=1.0 → red (highest)
 
 _STOPS = [
-    (0.00, (0,   0,   255)),   # blue
-    (0.25, (0,   255, 255)),   # cyan
-    (0.50, (0,   255,   0)),   # green
-    (0.75, (255, 255,   0)),   # yellow
-    (1.00, (255,   0,   0)),   # red
+    (0.00, (74,  144, 226)),   # blue       (lowest)
+    (0.20, (142, 195, 235)),   # light blue
+    (0.40, (220, 240, 180)),   # light yellow-green
+    (0.60, (255, 235,  80)),   # yellow
+    (0.80, (255, 140,   0)),   # orange
+    (1.00, (220,  30,   0)),   # red        (highest)
 ]
 
 
