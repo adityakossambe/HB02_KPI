@@ -21,7 +21,7 @@ from kpi_energy              import write_energy_sheet
 from transfer_analysis_model import transfer_analysis_model
 
 
-class ISRMonth(str, Enum):
+class Analysis_Period(str, Enum):
     january   = "January"
     february  = "February"
     march     = "March"
@@ -47,8 +47,8 @@ class FunctionInputs(AutomateBase):
         title="Analysis Model Branch",
         description="Branch to commit the analysis model to.",
     )
-    isr_month: ISRMonth = Field(
-        default=ISRMonth.annual,
+    isr_month: Analysis_Period = Field(
+        default=Analysis_Period.annual,
         title="Analysis Period",
         description="Period to use for the ISR heatmap colouring. Select 'Annual' for the sum of all 12 months.",
     )
